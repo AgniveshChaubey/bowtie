@@ -2,6 +2,6 @@ FROM alpine:latest
 
 RUN apk add --no-cache perl
 
-COPY hello.pl /
+COPY json-schema-modern.pl /
 
 CMD ["perl", "/json-schema-modern.pl"]
