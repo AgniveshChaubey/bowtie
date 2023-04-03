@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
-from textwrap import dedent
+from textwrap import dedent, indent
 import asyncio
 import json
 import os
@@ -89,6 +89,11 @@ hit_the_network = strimplementation(
 )
 
 
+def _failed(message, stderr):
+    indented = indent(stderr.decode(), prefix=" " * 2)
+    pytest.fail(f"{message}. stderr contained:\n\n{indented}")
+
+
 @asynccontextmanager
 async def bowtie(*args, succeed=True):
     proc = await asyncio.create_subprocess_exec(
@@ -108,10 +113,13 @@ async def bowtie(*args, succeed=True):
         lines = (json.loads(line.decode()) for line in stdout.splitlines())
 
         if succeed:
+            header = next(lines, None)
+            if header is None:
+                _failed("No report produced", stderr)
             try:
-                RunInfo(**next(lines))
+                RunInfo(**header)
             except _InvalidBowtieReport:
-                pytest.fail(f"Invalid report, stderr contained: {stderr}")
+                _failed("Invalid report", stderr)
         else:
             assert proc.returncode != 0
 
