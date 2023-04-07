@@ -1,4 +1,3 @@
-#!/usr/bin/perl
 use strict;
 use warnings;
 
@@ -64,4 +63,3 @@ while (my $line = <STDIN>) {
   my $response = $cmds{$request->{cmd}}->($request);
   print $json->encode($response) . "\n";
 }
-

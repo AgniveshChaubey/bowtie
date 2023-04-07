@@ -1,11 +1,10 @@
-FROM alpine:latest
+FROM perl:5.32
 
-RUN apk add --no-cache perl perl-utils
-RUN apk add --no-cache build-base
+WORKDIR /app
 
-RUN cpan JSON::MaybeXS
-RUN cpan JSON::Schema::Modern
+RUN cpanm JSON
+RUN cpanm JSON::Schema::Modern
 
-COPY json-schema-modern.pl /
+COPY json-schema-modern.pl .
 
-CMD ["perl", "/json-schema-modern.pl"]
+CMD ["perl", "json-schema-modern.pl"]
