@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from io import BytesIO
 from pathlib import Path
-from textwrap import dedent
+from textwrap import dedent, indent
 import asyncio
 import json
 import os
@@ -89,6 +89,11 @@ hit_the_network = strimplementation(
 )
 
 
+def _failed(message, stderr):
+    indented = indent(stderr.decode(), prefix=" " * 2)
+    pytest.fail(f"{message}. stderr contained:\n\n{indented}")
+
+
 @asynccontextmanager
 async def bowtie(*args, succeed=True):
     proc = await asyncio.create_subprocess_exec(
@@ -108,10 +113,13 @@ async def bowtie(*args, succeed=True):
         lines = (json.loads(line.decode()) for line in stdout.splitlines())
 
         if succeed:
+            header = next(lines, None)
+            if header is None:
+                _failed("No report produced", stderr)
             try:
-                RunInfo(**next(lines))
+                RunInfo(**header)
             except _InvalidBowtieReport:
-                pytest.fail(f"Invalid report, stderr contained: {stderr}")
+                _failed("Invalid report", stderr)
         else:
             assert proc.returncode != 0
 
@@ -461,7 +469,7 @@ async def test_validate(envsonschema, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_summary(envsonschema, tmp_path):
+async def test_summary_show_failures(envsonschema, tmp_path):
     tmp_path.joinpath("schema.json").write_text("{}")
     tmp_path.joinpath("instance.json").write_text("12")
 
@@ -479,21 +487,102 @@ async def test_summary(envsonschema, tmp_path):
     )
     validate_stdout, _ = await validate.communicate()
 
-    summary = await asyncio.create_subprocess_exec(
+    summary_failures = await asyncio.create_subprocess_exec(
         sys.executable,
         "-m",
         "bowtie",
         "summary",
         "--format",
         "json",
+        "--show",
+        "failures",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    stdout, stderr = await summary.communicate(validate_stdout)
+    stdout, stderr = await summary_failures.communicate(validate_stdout)
     assert stderr == b""
     assert json.loads(stdout) == [
-        [["envsonschema", "python"], dict(errored=0, failed=0, skipped=0)],
+        [
+            ["envsonschema", "python"],
+            dict(errored=0, failed=0, skipped=0),
+        ],
+    ]
+
+
+@pytest.mark.asyncio
+async def test_summary_show_validation(envsonschema, lintsonschema, tmp_path):
+    run = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "bowtie",
+        "run",
+        "-i",
+        envsonschema,
+        "-i",
+        lintsonschema,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    run_stdout, _ = await run.communicate(
+        b"""\
+            {"description":"one","schema":{"type": "integer"},"tests":[{"description":"valid:1","instance":12},{"description":"valid:0","instance":12.5}]}
+            {"description":"two","schema":{"type": "string"},"tests":[{"description":"crash:1","instance":"{}"}]}
+            {"description":"crash:1","schema":{"type": "number"},"tests":[{"description":"three","instance":"{}"}, {"description": "another", "instance": 37}]}
+            {"description":"four","schema":{"type": "array"},"tests":[{"description":"skip:message=foo","instance":""}]}
+            {"description":"skip:message=bar","schema":{"type": "boolean"},"tests":[{"description":"five","instance":""}]}
+        """  # noqa: E501
+    )
+
+    summary_validation = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "bowtie",
+        "summary",
+        "--format",
+        "json",
+        "--show",
+        "validation",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await summary_validation.communicate(run_stdout)
+    assert stderr == b""
+    assert json.loads(stdout) == [
+        [
+            {"type": "integer"},
+            [
+                [12, ["valid", "valid"]],
+                [12.5, ["invalid", "valid"]],
+            ],
+        ],
+        [
+            {"type": "string"},
+            [
+                ["{}", ["error", "valid"]],
+            ],
+        ],
+        [
+            {"type": "number"},
+            [
+                ["{}", ["error", "valid"]],
+                [37, ["error", "valid"]],
+            ],
+        ],
+        [
+            {"type": "array"},
+            [
+                ["", ["skipped", "valid"]],
+            ],
+        ],
+        [
+            {"type": "boolean"},
+            [
+                ["", ["skipped", "valid"]],
+            ],
+        ],
     ]
 
 
