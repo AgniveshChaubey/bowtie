@@ -1,14 +1,3 @@
-// import attrs from 'https://cdn.jsdelivr.net/npm/attrs@2.2.0/dist/attrs.min.js';
-
-// import * as importlib from 'https://unpkg.com/importlib';
-
-class InvalidBowtieReport extends Error {
-  constructor(message) {
-    super(message);
-    this.name = 'InvalidBowtieReport';
-  }
-}
-
 
 const _DIALECT_URI_TO_SHORTNAME = {
   "https://json-schema.org/draft/2020-12/schema": "Draft 2020-12",
@@ -18,6 +7,16 @@ const _DIALECT_URI_TO_SHORTNAME = {
   "http://json-schema.org/draft-04/schema#": "Draft 4",
   "http://json-schema.org/draft-03/schema#": "Draft 3",
 };
+
+
+class InvalidBowtieReport extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'InvalidBowtieReport';
+  }
+}
+
+//RunInfo class
 
 export class RunInfo {
   constructor(started, bowtie_version, dialect, _implementations) {
@@ -46,33 +45,16 @@ export class RunInfo {
       ]))
     );
   }
-
+  
   create_summary() {
+    console.log(Object.values(this._implementations))
     return new _Summary({ implementations: Object.values(this._implementations) });
   }
 }
 
-RunInfo._implementations = {
-  alias: 'implementations',
-  validate: (value) => {
-    if (!Array.isArray(value)) {
-      throw new Error('The "implementations" attribute must be an array.');
-    }
-    return true;
-  }
-};
-
-
-//////////////////////////////////
 // Summary class
 
-
 class _Summary {
-  // implementations = [];
-  // _combined = {};
-  // did_fail_fast = false;
-  // counts = {};
-
   constructor(implementations) {
     // console.log(typeof(implementations))
     if (!Array.isArray(implementations)) {
@@ -96,43 +78,43 @@ class _Summary {
       result[each.image] = new Count();
       return result;
     }, {});
-    // for (let i = 0; i < this.implementations.length; i++) {
-    //   this.counts[this.implementations[i]["image"]] = new Count();
-    // }
-  }
+    }
 
-  total_cases() {
-    const counts = new Set(Object.values(this.counts).map((count) => count.total_cases));
+  get total_cases() {
+    const counts = new Set(Object.values(this.counts).map(count => count.total_cases));
+    // console.log(typeof(counts.size))
     if (counts.size !== 1) {
       const summary = Object.entries(this.counts)
-        .map(([key, count]) => `${each.split('/')[2]}: ${count.total_cases}`)
+        .map(([key, count]) => `  ${key.split('/')[2]}: ${count.total_cases}`)
         .join("\n");
-      throw new InvalidBowtieReport(`Inconsistent number of cases run:\n\n${summary}`);
+      throw new Error(`Inconsistent number of cases run:\n\n${summary}`);
+    }
+    // console.log(counts.values().next().value)
+    return counts.values().next().value;
+  }
+
+  get errored_cases() {
+    return Object.values(this.counts).reduce((sum, count) => sum + count.errored_cases, 0);
+  }
+
+  get total_tests() {
+    const counts = new Set(Object.values(this.counts).map(count => count.total_tests));
+    // console.log(counts)
+    if (counts.size !== 1) {
+      throw new InvalidBowtieReport(`Inconsistent number of tests run: ${JSON.stringify(this.counts)}`);
     }
     return counts.values().next().value;
   }
 
-  errored_cases() {
-    return Object.values(this.counts).reduce((sum, count) => sum + count.errored_cases, 0);
-  }
-
-  total_tests() {
-    const counts = new Set(Object.values(this.counts).map((count) => count.total_tests));
-    if (counts.size !== 1) {
-      throw new InvalidBowtieReport(`Inconsistent number of tests run: ${this.counts}`);
-    }
-    return counts[0];
-  }
-
-  failed_tests() {
+  get failed_tests() {
     return Object.values(this.counts).reduce((sum, count) => sum + count.failed_tests, 0);
   }
 
-  errored_tests() {
+  get errored_tests() {
     return Object.values(this.counts).reduce((sum, count) => sum + count.errored_tests, 0);
   }
 
-  skipped_tests() {
+  get skipped_tests() {
     return Object.values(this.counts).reduce((sum, count) => sum + count.skipped_tests, 0);
   }
 
@@ -242,7 +224,7 @@ class _Summary {
   }
 }
 
-// class Counts
+// Count class
 
 class Count {
   constructor() {
@@ -254,84 +236,7 @@ class Count {
     this.skipped_tests = 0;
   }
 
-  get unsuccessful_tests() {
+  unsuccessful_tests() {
     return this.errored_tests + this.failed_tests + this.skipped_tests;
-  }
-}
-
-// class ClaseSkipped
-
-class CaseSkipped {
-  constructor(implementation, seq, message = null, issue_url = null) {
-    this.errored = false;
-    this.implementation = implementation;
-    this.seq = seq;
-    this.message = message;
-    this.issue_url = issue_url;
-    this.skipped = true;
-  }
-
-  report(reporter) {
-    reporter.skipped(this);
-  }
-}
-
-// class CaseResult
-class CaseResult {
-  errored = false;
-  implementation;
-  seq;
-  results;
-  expected;
-  static from_dict(data, kwargs) {
-    return new CaseResult({
-      results: data.results.map((t) => TestResult.from_dict(t)),
-      ...data,
-      ...kwargs,
-    });
-  }
-
-  get failed() {
-    return Array.from(this.compare()).some(([, failed]) => failed);
-  }
-
-  report(reporter) {
-    reporter.got_results(this);
-  }
-
-  *compare() {
-    for (let i = 0; i < this.results.length; i++) {
-      const test = this.results[i];
-      const expected = this.expected[i];
-      const failed =
-        !test.skipped &&
-        !test.errored &&
-        expected !== null &&
-        expected !== test.valid;
-      yield [test, failed];
-    }
-  }
-
-  constructor({ implementation, seq, results, expected }) {
-    this.errored = false;
-
-    this.implementation = implementation;
-
-    this.seq = seq;
-
-    this.results = results;
-
-    this.expected = expected;
-  }
-}
-
-
-//class ReportData
-
-class ReportData {
-  constructor(summary, run_info, generate_dialect_navigation) {
-    this.summary = summary;
-    this.run_info = run_info;
-    this.generate_dialect_navigation = generate_dialect_navigation;
   }
 }
